@@ -1,0 +1,453 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>Network | Minimap</title>
+
+    <script type="text/javascript" src="../exampleUtil.js"></script>
+    <script type="text/javascript" src="../../../dist/vis.js"></script>
+    <link href="../../../dist/vis.css" rel="stylesheet" type="text/css" />
+
+    <style type="text/css">
+        #mynetwork {
+            float: left;
+            width: 1200px;
+            height: 600px;
+            border: 1px solid lightgray;
+        }
+
+        #minimap {
+            position: relative;
+            float: left;
+            width: 250px;
+            height: 125px;
+            border: 1px solid lightgray;
+            overflow: hidden;
+        }
+
+        #dragHandle {
+            visibility: hidden;
+            position: absolute;
+            outline: 1px solid blue;
+            z-index: 10;
+            
+        }
+    </style>
+
+    <script type="text/javascript">
+        function changeMinimapSize(w) {
+            minimapWidth = w;
+            minimapHeight = minimapWidth / widthLengthRatio;
+            minimapWidthString = minimapWidth + 'px';
+            minimapHeightString = minimapHeight + 'px';
+
+            maxDragHandleWidth = minimapWidth;
+
+            network.stabilize();
+        }
+
+        function changeDragHandleColor(c) {
+            var dragHandle = document.getElementById("dragHandle");
+            if (dragHandle != null) {
+                dragHandle.style.outlineColor = c;
+            }
+
+        }
+    </script>
+</head>
+<body>
+    <div>
+        <span>minimap width: <input type="text" id="txtMinimapWidth" value="250" style="width: 60px;" onchange="changeMinimapSize(this.value);" /> px</span> ---
+        <span>drag handle color: <input type="text" id="txtDragHandleColor" value="blue" style="width: 60px;" onchange="changeDragHandleColor(this.value);" /></span>
+    </div>
+    <div id="mynetwork"></div>
+    <div id="minimap">
+        <div id="dragHandle" draggable="true" ondragstart="drag(event)"></div>
+    </div>
+    <pre id="eventSpan"></pre>
+
+    <script type="text/javascript">
+        // create an array with nodes
+        var nodes = [];
+        var edges = [];
+        var numberOfMiddles = 6;
+        var numberOfBottoms = 10;
+        var numberToDivide = 1;
+        var counter = 0;
+        var id = counter + 1;
+        var parent = id;
+        var level2Nodes = [];
+        var groups = [];
+
+
+        // build data
+        buildGraphData();
+
+        var nodesDataset = new vis.DataSet(nodes);
+        var edgesDataset = new vis.DataSet(edges);
+
+        allNodes = nodes;
+
+        var container = document.getElementById("mynetwork");
+        var minimap = document.getElementById("minimap");
+        var dragHandle = document.getElementById("dragHandle");
+
+        var widthLengthRatio = container.clientWidth / container.clientHeight;
+        var lastScale = null;
+        var zoomFactor = 1;
+        var minimapWidth;
+        var minimapHeight;
+        var minDragHandleWidth = 20;
+        var maxDragHandleWidth;
+        var minimapWidthString;
+        var minimapHeightString;
+        var centerX;
+        var centerY;
+        var canvasWidth;
+        var canvasHeight;
+
+        if (txtMinimapWidth.clientWidth != "undefined" && txtMinimapWidth.clientWidth != null
+            && txtMinimapWidth.clientWidth != "") {
+            minimapWidth = txtMinimapWidth.value;
+            minimapHeight = minimapWidth / widthLengthRatio;
+            minimapWidthString = minimapWidth + 'px';
+            minimapHeightString = minimapHeight + 'px';
+
+            maxDragHandleWidth = minimapWidth;
+        }
+
+        // create a network
+        var data = {
+            nodes: nodesDataset,
+            edges: edgesDataset
+        };
+        var options = {
+                physics: {
+                    stabilization: false,
+                },
+        };
+        options.nodes = {
+            shape: 'dot',
+            scaling: {
+                min: 10,
+                max: 30,
+                label: {
+                    min: 8,
+                    max: 30,
+                    drawThreshold: 12,
+                    maxVisible: 20
+                }
+            },
+            font: {
+                size: 12,
+                face: 'Tahoma'
+            }
+        };
+        options.edges = {
+            width: 0.15,
+            color: { inherit: 'from' },
+            smooth: {
+                type: 'continuous',
+            }
+        };
+        options.interaction = {
+            hideEdgesOnDrag: true,
+            navigationButtons: true,
+            keyboard: {
+                speed: {
+                    x: 5,
+                    y: 5,
+                    zoom: 0.1,
+                },
+            },
+        };
+
+
+        var network = new vis.Network(container, data, options);
+
+        network.on("zoom", function (params) {
+
+            // 1. resize the drag handle on the minimap
+            // 2. consider cursor position for view point move
+
+            var ratio = params.scale / lastScale;
+            // right now, factoredRatio is the same as ratio (current zoom level/previous zoom level)
+            // if this is drastically inaccurate, we may consider a factor (I am not sure what it is yet)
+            var factoredRatio = ratio > 1 ? ratio / zoomFactor : ratio * zoomFactor;
+
+            var largeViewCenter = network.getViewPosition();
+
+            // first move the drag handle to the location relative to the current cursor
+            // location in the larger view
+            var changeInX = largeViewCenter.x - centerX;
+            var changeInY = largeViewCenter.y - centerY;
+            var xChangeRatio = changeInX / canvasWidth;
+            var yChangeRatio = changeInY / canvasHeight;
+
+            console.log("current scale: " + params.scale);
+            console.log("last scale: " + lastScale);
+            console.log("zoom: " + params.direction);
+            console.log("center canvas unit: " + JSON.stringify(largeViewCenter));
+            console.log("large view center move: " + changeInX + " X " + changeInY);
+            console.log("large view move ratio: " + xChangeRatio + " X " + yChangeRatio);
+            console.log("drag handle should move: " + xChangeRatio * minimapWidth + " X " + yChangeRatio * minimapHeight);
+
+            var dragHandleWidth = parseFloat(dragHandle.style.width.replace("px", ""));
+            var newdragHandleWidth = dragHandleWidth / factoredRatio;
+            var widthDiff = newdragHandleWidth - dragHandleWidth;
+            var dragHandleHeight = parseFloat(dragHandle.style.height.replace("px", ""));
+            var newdragHandleHeight = dragHandleHeight / factoredRatio;
+            var heightDiff = newdragHandleHeight - dragHandleHeight;
+
+            // moving drag handle according to cursor position
+            var dragHandleLeft = parseFloat(dragHandle.style.left.replace("px", ""));
+            var dragHandleTop = parseFloat(dragHandle.style.top.replace("px", ""));
+            dragHandle.style.left = (dragHandleLeft + xChangeRatio * minimapWidth) + "px";
+            dragHandle.style.top = (dragHandleTop + yChangeRatio * minimapHeight) + "px";
+
+            if (lastScale != params.scale) {
+                dragHandle.style.width = newdragHandleWidth + "px";
+                dragHandle.style.height = newdragHandleHeight + "px";
+                dragHandle.style.left = (parseFloat(dragHandle.style.left.replace("px", "")) - widthDiff / 2) + "px";
+                dragHandle.style.top = (parseFloat(dragHandle.style.top.replace("px", "")) - heightDiff / 2) + "px";
+            }
+
+            lastScale = params.scale;
+            largeViewCenter = network.getViewPosition();
+            centerX = largeViewCenter.x;
+            centerY = largeViewCenter.y;
+
+        });
+
+        network.on("dragEnd", function (params) {
+
+            var largeViewCenter = network.getViewPosition();
+            var largeViewMoveX = largeViewCenter.x - centerX;
+            var largeViewMoveY = largeViewCenter.y - centerY;
+
+            var dragHandle = document.getElementById("dragHandle");
+            var oldLeft = parseFloat(dragHandle.style.left.replace("px", ""));
+            var oldTop = parseFloat(dragHandle.style.top.replace("px", ""));
+
+            var dragHandleMoveX = (largeViewMoveX / canvasWidth * minimapWidth * -1);
+            var dragHandleMoveY = (largeViewMoveY / canvasHeight * minimapHeight * -1);
+            var newLeft = (oldLeft - dragHandleMoveX);
+            var newTop = (oldTop - dragHandleMoveY);
+
+            // move the dragHandle
+            dragHandle.style.left = newLeft + 'px';
+            dragHandle.style.top = newTop + 'px';
+
+            centerX = largeViewCenter.x;
+            centerY = largeViewCenter.y;
+
+        });
+
+        network.on("stabilized", function (params) {
+            network.fit();
+            setTimeout(drawMinimap, 1000);
+
+            largeViewCenter = network.getViewPosition();
+            console.log("after stablized - center canvas unit: " + JSON.stringify(largeViewCenter));
+            var bpos = network.DOMtoCanvas({ x: 0, y: 0 });
+            var epos = network.DOMtoCanvas({ x: container.clientWidth, y: container.clientHeight });
+            canvasWidth = epos.x - bpos.x;
+            canvasHeight = epos.y - bpos.y;
+            console.log("after stablized - canvas width and height: " + canvasWidth + " -- " + canvasHeight);
+
+        });
+
+    function buildGraphData() {
+        nodes.push({
+            id: id,
+            label: "Top",
+            title: "Top<br>10.10.11.1<br>group: " + 20,
+            value: 30,
+            group: 20,
+            level: 0,
+            shape: 'circle'
+        });
+        counter = counter + 1;
+
+        for (var i = 1; i <= numberOfMiddles; i++) {
+            id = counter + 1;
+            nodes.push({
+                id: id,
+                label: "Middle" + i,
+                title: "Middle" + i + "<br>10.10.11." + i + "<br>group: " + (20 + i),
+                value: 20,
+                group: 20 + i,
+                level: 1,
+                shape: 'circle'
+            });
+            level2Nodes.push(nodes[nodes.length - 1]);
+
+            edges.push({
+                from: 1,
+                to: id,
+                arrows: 'from'
+            });
+            counter = counter + 1;
+            parent = id;
+
+            for (var j = 0; j < numberOfBottoms; j++) {
+                id = counter + 1;
+                nodes.push({
+                    id: id,
+                    label: "Bottom" + id,
+                    title: "Bottom" + id + "<br>10.10." + i + "." + j + "<br>group: " + (i * 1000 + j % numberToDivide),
+                    value: 10,
+                    group: i * 1000 + j % numberToDivide,
+                    level: j % numberToDivide + 2,
+                    shape: 'circle'
+                });
+                edges.push({
+                    from: parent,
+                    to: id,
+                    arrows: 'from'
+                });
+                counter = counter + 1;
+                groups.push(i * 1000 + j % numberToDivide);
+            }
+        }
+
+        // add one special edge
+        edges.push({
+            from: 2,
+            to: 1,
+            arrows: 'from'
+        });
+    }
+
+    function drawMinimap() {
+
+        lastScale = network.getScale();
+        var canvases = document.getElementsByTagName("canvas");
+        if (canvases.length == 1) {
+            // get the canvas element
+            var oldCanvas = canvases[0];
+            // clone the canvas
+            var newCanvas = cloneCanvas(oldCanvas);
+            // remove previously drawn image in case the minimap image is
+            // created multiple times.
+
+            var minimap = document.getElementById("minimap");
+            minimap.style.width = minimapWidthString;
+            minimap.style.height = minimapHeightString;
+
+            if (minimap.childElementCount > 1) {
+                minimap.removeChild(minimap.children[1]);
+            }
+            newCanvas.style.position = "relative";
+            minimap.appendChild(newCanvas);
+
+            // set the initial draggable area to be slightly smaller than
+            // the minimap div
+            var dragHandle = document.getElementById("dragHandle");
+            dragHandle.style.visibility = 'visible';
+            dragHandle.style.width = minimapWidthString;
+            dragHandle.style.height = minimapHeightString;
+            dragHandle.style.left = '0px';
+            dragHandle.style.top = '0px';
+
+        }
+    }
+
+    function cloneCanvas(oldCanvas) {
+        // cloning using image. somehow, the faster option of using
+        // drawImage does not work for the canvas done with vis
+
+        //create a new canvas
+        //var newCanvas = oldCanvas.cloneNode();
+        //var context = newCanvas.getContext('2d');
+
+        ////apply the old canvas to the new one
+        //context.drawImage(oldCanvas, 1300, 0);
+        var minimap = document.getElementById("minimap");
+
+        var image,
+            dataURI = oldCanvas.toDataURL();
+        image = document.createElement('img');
+        image.src = dataURI;
+        image.style.width = minimapWidthString;
+        image.style.height = "auto";
+        image.ondrop = function () { drop(event); };
+        image.ondragover = function () { allowDrop(event); };
+        return image;
+
+        //return the new canvas
+        //return newCanvas;
+    }
+
+    function allowDrop(ev) {
+        ev.preventDefault();
+    }
+
+    function drag(ev) {
+        //ev.dataTransfer.setData("text", ev.target.id);
+        //ev.dataTransfer.effectAllowed = 'move';
+        var style = window.getComputedStyle(ev.target, null);
+        ev.dataTransfer.setData("text/plain",
+        (parseFloat(style.getPropertyValue("left")) - ev.clientX) + ',' + (parseFloat(style.getPropertyValue("top")) - ev.clientY)
+        + ',' + parseFloat(style.getPropertyValue("width")) + ',' + parseFloat(style.getPropertyValue("height")));
+    }
+
+    function drop(ev) {
+
+        ev.preventDefault();
+
+        var offset = ev.dataTransfer.getData("text/plain").split(',');
+        var dragHandle = document.getElementById("dragHandle");
+        var oldLeft = dragHandle.style.left.replace("px", "");
+        var oldTop = dragHandle.style.top.replace("px", "");
+        var newLeft = (ev.clientX + parseFloat(offset[0]));
+        var newTop = (ev.clientY + parseFloat(offset[1]));
+
+        // move the dragHandle
+        dragHandle.style.left = newLeft + 'px';
+        dragHandle.style.top = newTop + 'px';
+
+        console.log("new left: " + newLeft);
+        console.log("old left: " + oldLeft);
+        console.log("new top: " + newTop);
+        console.log("old top: " + oldTop);
+        console.log("distance moved horizontally in minimap: " + (newLeft - oldLeft));
+        console.log("distance moved vertically in minimap: " + (newTop - oldTop));
+
+        var pos = network.getViewPosition();
+        var moveX = (newLeft - oldLeft) / minimapWidth * canvasWidth;
+        var moveY = (newTop - oldTop) / minimapHeight * canvasHeight;
+        var newPos = { x: pos.x + moveX, y: pos.y + moveY };
+
+        // handle the larger view move
+        var scale = network.getScale();
+        var options = {
+            position: newPos,
+            animation: false,
+        }
+
+
+        network.moveTo(options);
+
+        var largeViewCenter = network.getViewPosition();
+        centerX = largeViewCenter.x;
+        centerY = largeViewCenter.y;
+
+        return false;
+    }
+
+    function dragStartHandler(event) {
+        if (event.target instanceof HTMLLIElement) {
+            // use the element's data-value="" attribute as the value to be moving:
+            event.dataTransfer.setData(internalDNDType, event.target.dataset.value);
+            event.dataTransfer.effectAllowed = 'move'; // only allow moves
+        } else {
+            event.preventDefault(); // don't allow selection to be dragged
+        }
+    }
+    </script>
+
+</body>
+
+
+
+</html>
