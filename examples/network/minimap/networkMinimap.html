@@ -7,6 +7,8 @@
     <script type="text/javascript" src="../../../dist/vis.js"></script>
     <link href="../../../dist/vis.css" rel="stylesheet" type="text/css" />
 
+    <script src="../datasources/WorldCup2014.js"></script>
+
     <style type="text/css">
         #mynetwork {
             float: left;
@@ -52,12 +54,25 @@
             }
 
         }
+
+        // todo: 
+        // 1. prevent dragging not the handle
+        // 2. two text fields validation
+        // 3. better comments of the calculation
     </script>
 </head>
 <body>
-    <div>
-        <span>minimap width: <input type="text" id="txtMinimapWidth" value="250" style="width: 60px;" onchange="changeMinimapSize(this.value);" /> px</span> ---
-        <span>drag handle color: <input type="text" id="txtDragHandleColor" value="blue" style="width: 60px;" onchange="changeDragHandleColor(this.value);" /></span>
+    <h2>Minimap</h2>
+    <div style="width:1200px; font-size:14px;">
+        The minimap is demonstrated using the graph created by WorldCup2014. The minimap appears on the right of the large graph
+        and is initiated by 1) afterDrawing event, for graphs that do not use physics, or 2) stablized event,
+        for graphs that use physics. In this example, the minimap is initialized using afterDrawing evet. Try these actions:
+        <ul><li>Zoom in and out using mouse wheel in the large graph</li><li>Drag the rectangle handle in the minimap</li>
+        <li>Drag the large graph</li></ul>
+    </div>
+    <div style="width:1200px; font-size:14px;">
+        <span>Minimap width: <input type="text" id="txtMinimapWidth" value="250" style="width: 60px;" onchange="changeMinimapSize(this.value);" /> px</span> ----
+        <span>Drag handle color: <input type="text" id="txtDragHandleColor" value="blue" style="width: 60px;" onchange="changeDragHandleColor(this.value);" /></span>
     </div>
     <div id="mynetwork"></div>
     <div id="minimap">
@@ -66,26 +81,9 @@
     <pre id="eventSpan"></pre>
 
     <script type="text/javascript">
-        // create an array with nodes
-        var nodes = [];
-        var edges = [];
-        var numberOfMiddles = 6;
-        var numberOfBottoms = 10;
-        var numberToDivide = 1;
-        var counter = 0;
-        var id = counter + 1;
-        var parent = id;
-        var level2Nodes = [];
-        var groups = [];
 
-
-        // build data
-        buildGraphData();
-
-        var nodesDataset = new vis.DataSet(nodes);
-        var edgesDataset = new vis.DataSet(edges);
-
-        allNodes = nodes;
+        var nodesDataset = new vis.DataSet(nodes); // these come from WorldCup2014.js
+        var edgesDataset = new vis.DataSet(edges); // these come from WorldCup2014.js
 
         var container = document.getElementById("mynetwork");
         var minimap = document.getElementById("minimap");
@@ -116,53 +114,41 @@
         }
 
         // create a network
-        var data = {
-            nodes: nodesDataset,
-            edges: edgesDataset
-        };
         var options = {
-                physics: {
-                    stabilization: false,
-                },
-        };
-        options.nodes = {
-            shape: 'dot',
-            scaling: {
-                min: 10,
-                max: 30,
-                label: {
-                    min: 8,
+            nodes: {
+                shape: 'dot',
+                scaling: {
+                    min: 10,
                     max: 30,
-                    drawThreshold: 12,
-                    maxVisible: 20
+                    label: {
+                        min: 8,
+                        max: 30,
+                        drawThreshold: 12,
+                        maxVisible: 20
+                    }
+                },
+                font: {
+                    size: 12,
+                    face: 'Tahoma'
                 }
             },
-            font: {
-                size: 12,
-                face: 'Tahoma'
-            }
-        };
-        options.edges = {
-            width: 0.15,
-            color: { inherit: 'from' },
-            smooth: {
-                type: 'continuous',
-            }
-        };
-        options.interaction = {
-            hideEdgesOnDrag: true,
-            navigationButtons: true,
-            keyboard: {
-                speed: {
-                    x: 5,
-                    y: 5,
-                    zoom: 0.1,
-                },
+            edges: {
+                width: 0.15,
+                color: { inherit: 'from' },
+                smooth: {
+                    type: 'continuous'
+                }
             },
+            physics: false,
+            interaction: {
+                tooltipDelay: 200,
+                hideEdgesOnDrag: true
+            }
         };
+        var data = { nodes: nodesDataset, edges: edgesDataset } // Note: data is coming from ./datasources/WorldCup2014.js
 
 
-        var network = new vis.Network(container, data, options);
+        network = new vis.Network(container, data, options);
 
         network.on("zoom", function (params) {
 
@@ -256,69 +242,21 @@
 
         });
 
-    function buildGraphData() {
-        nodes.push({
-            id: id,
-            label: "Top",
-            title: "Top<br>10.10.11.1<br>group: " + 20,
-            value: 30,
-            group: 20,
-            level: 0,
-            shape: 'circle'
+        network.once("afterDrawing", function (params) {
+            network.fit();
+            setTimeout(drawMinimap, 1000);
+
+            largeViewCenter = network.getViewPosition();
+            console.log("after stablized - center canvas unit: " + JSON.stringify(largeViewCenter));
+            var bpos = network.DOMtoCanvas({ x: 0, y: 0 });
+            var epos = network.DOMtoCanvas({ x: container.clientWidth, y: container.clientHeight });
+            canvasWidth = epos.x - bpos.x;
+            canvasHeight = epos.y - bpos.y;
+            console.log("after stablized - canvas width and height: " + canvasWidth + " -- " + canvasHeight);
+
         });
-        counter = counter + 1;
 
-        for (var i = 1; i <= numberOfMiddles; i++) {
-            id = counter + 1;
-            nodes.push({
-                id: id,
-                label: "Middle" + i,
-                title: "Middle" + i + "<br>10.10.11." + i + "<br>group: " + (20 + i),
-                value: 20,
-                group: 20 + i,
-                level: 1,
-                shape: 'circle'
-            });
-            level2Nodes.push(nodes[nodes.length - 1]);
-
-            edges.push({
-                from: 1,
-                to: id,
-                arrows: 'from'
-            });
-            counter = counter + 1;
-            parent = id;
-
-            for (var j = 0; j < numberOfBottoms; j++) {
-                id = counter + 1;
-                nodes.push({
-                    id: id,
-                    label: "Bottom" + id,
-                    title: "Bottom" + id + "<br>10.10." + i + "." + j + "<br>group: " + (i * 1000 + j % numberToDivide),
-                    value: 10,
-                    group: i * 1000 + j % numberToDivide,
-                    level: j % numberToDivide + 2,
-                    shape: 'circle'
-                });
-                edges.push({
-                    from: parent,
-                    to: id,
-                    arrows: 'from'
-                });
-                counter = counter + 1;
-                groups.push(i * 1000 + j % numberToDivide);
-            }
-        }
-
-        // add one special edge
-        edges.push({
-            from: 2,
-            to: 1,
-            arrows: 'from'
-        });
-    }
-
-    function drawMinimap() {
+        function drawMinimap() {
 
         lastScale = network.getScale();
         var canvases = document.getElementsByTagName("canvas");
